@@ -10,6 +10,7 @@ import info.orestes.rest.conversion.ClassSpecification;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Random;
 import java.util.stream.Stream;
 
@@ -42,7 +43,8 @@ public class TransactionTest {
          */
         ClassSpecification s = new ClassSpecification(TEST_BUCKET, BucketAcl.createDefault(),
                 new ClassFieldSpecification("ref", TEST_BUCKET),
-                new ClassFieldSpecification("amount", Bucket.INTEGER),
+                // CAUTION! Even though the type is named integer you have to store and load long values!!!
+                new ClassFieldSpecification("balance", Bucket.INTEGER),
                 new ClassFieldSpecification("name", Bucket.STRING),
                 new ClassFieldSpecification("list", Bucket.LIST, Bucket.STRING),
                 new ClassFieldSpecification("date", Bucket.DATETIME),
@@ -76,13 +78,13 @@ public class TransactionTest {
      * @param initialBalance The intial balance of the account.
      * @return The account object.
      */
-    private OObject createBankAccount(int initialBalance) {
+    private OObject createBankAccount(long initialBalance) {
         // Generate a new unique object reference
         ObjectRef newRef = ObjectRef.create(TEST_BUCKET);
         // Instantiate an object for the new references
         OObject account = client.getSchema().getClass(newRef.getBucket()).newInstance(newRef, ObjectAcl.createDefault());
         // Set an initial balance
-        account.setValue("amount", initialBalance);
+        account.setValue("balance", initialBalance);
         return account;
     }
 
@@ -103,10 +105,10 @@ public class TransactionTest {
 
         int transferAmount = rnd.nextInt(100);
         // transfer the money
-        int newAmount2 = (int) account1.getValue("amount") - transferAmount;
-        int newAmount1 = (int) account2.getValue("amount") + transferAmount;
-        account1.setValue("amount", newAmount1);
-        account2.setValue("amount", newAmount2);
+        long newBalance2 = (long) account1.getValue("balance") - transferAmount;
+        long newBalance1 = (long) account2.getValue("balance") + transferAmount;
+        account1.setValue("balance", newBalance1);
+        account2.setValue("balance", newBalance2);
 
         // save the accounts
         transaction.update(account1);
@@ -142,7 +144,16 @@ public class TransactionTest {
             Stream<OObject> accounts = transaction.loadAllObjects(accountReferences.stream());
 
             // sum up balances
-            Stream<Long> balances = accounts.map(account -> account.getValue("balance"));
+            Stream<Long> balances = accounts.map(account -> {
+                Long amount = 0L;
+                if (account != null) {
+                    amount = account.getValue("balance");
+                    if (amount == null) {
+                        amount = 0L;
+                    }
+                }
+                return amount;
+            });
             Long balance = balances.reduce(0L, (a, b) -> a + b);
 
             //commit transaction
@@ -160,15 +171,17 @@ public class TransactionTest {
     }
 
     public static void main(String[] args) {
-        int runs = 100;
+        int runs = 1000;
         TransactionTest test = new TransactionTest();
 
         // Init the economy with 100 accounts
-        test.initEconomy(10_000);
+        int numAccounts = 1_000;
+        test.initEconomy(numAccounts);
+        System.out.println("DB initialized with " + numAccounts + " bank accounts");
 
         // calculate overall balance
         long overallBalance = test.queryOverallBalance();
-        System.out.println(overallBalance);
+        System.out.println("Intial overall balance: " + overallBalance);
 
         // execute some transfers in parallel
         Stream<Integer> parallel = Stream.generate(() -> 0).limit(runs).parallel();
@@ -178,7 +191,8 @@ public class TransactionTest {
 
         // calculate overall balance again (should not have been changed)
         overallBalance = test.queryOverallBalance();
-        System.out.println(overallBalance);
+        System.out.println("Final overall balance: " + overallBalance);
+        System.exit(0);
     }
 
 }
