@@ -1,4 +1,4 @@
-Welcome to Baqend transactions
+Welcome to Baqend Transactions
 =======
 This small example project has two purposes:
 
@@ -14,6 +14,8 @@ Running the Example Project
 4. Now the dashboard will be [online](http://localhost:8080/dashboard/app/default/start).
 5. Start the `main`-method in the class `TransactionTest`
 
+The test will run for a few seconds and insert a number of bank account objects into the database. Afterwards money will be transfered in parallel between random accounts. The test prints the number of accounts, the overall balance and how many transaction where executed onto the console.
+
 We've kept the footprint of the example as low as possible while showing most of the transaction features in a non trivial example. Of course you can use the example to build your own prototype. The **Java-SDK** is a simple, low level, (actually internal) API with not the best documentation. However, it works quite similar to our main **JavaScript SDK**  that is well [documented](http://www.baqend.com/guide/) and comes with a [quick-start-guide](http://www.baqend.com/guide/gettingstarted/). Both SDKs are based on the **REST-API**. If your are interested in how Baqend increases web performance you may visit our [blog](http://blog.baqend.com) or read up on the [scientific research](http://www.baqend.com/#final-remark) Baqend is based on.
 
  Building Apps and Websites with Baqend
@@ -21,4 +23,3 @@ We've kept the footprint of the example as low as possible while showing most of
 The Baqend Community Edition is a free, single-server variant of the Baqend platform (think: MySQL). It comes with all our Backend-as-a-Service features (user management, cloud code, etc.) and is free for personal and commercial use.
 
 As a single-server solution it it best used for prototyping, testing and staging. For full cache support, elastic scalability and automated cloud hosting try [Baqend Cloud](http://www.baqend.com/product.html#pricing) or [Baqend Enterprise](http://www.baqend.com/product.html#enterprise) for on premise deployments.
-
