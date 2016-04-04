@@ -1,0 +1,15 @@
+apply plugin: 'java'
+
+repositories {
+   flatDir {
+       dirs 'libs'
+   }
+	 mavenCentral()
+}
+
+dependencies {
+    compile ('com.baqend:orestes-common.1.0.2-SNAPSHOT')
+		compile ('com.baqend:orestes-client.1.0.2-SNAPSHOT')
+    compile ('com.google.guava:guava:18.0')
+    compile('org.apache.commons:commons-math3:3.5')
+}
