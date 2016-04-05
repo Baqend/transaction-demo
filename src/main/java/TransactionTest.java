@@ -4,6 +4,7 @@ import info.orestes.common.error.ObjectOutOfDate;
 import info.orestes.common.error.TransactionAborted;
 import info.orestes.common.error.TransactionUnavailable;
 import info.orestes.common.typesystem.*;
+import info.orestes.pluggable.types.data.DBClassField;
 import info.orestes.pluggable.types.data.OObject;
 import info.orestes.rest.conversion.ClassFieldSpecification;
 import info.orestes.rest.conversion.ClassSpecification;
@@ -12,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 /**
@@ -20,6 +22,7 @@ import java.util.stream.Stream;
  */
 public class TransactionTest {
     public static final Bucket TEST_BUCKET = new Bucket("test.bucket.Value");
+    private final DBClassField BALANCE_CLASS_FIELD;
 
     private final OrestesClient client;
     private final UserInfo rootUser;
@@ -52,6 +55,9 @@ public class TransactionTest {
 
         // Add the schema for the test bucket on the server side.
         client.getSchema().add(s, rootUser);
+
+        // Get class field for the account balance (needed for partial updates)
+        BALANCE_CLASS_FIELD = client.getSchema().getClass(TEST_BUCKET).getField("balance");
     }
 
     /**
@@ -97,9 +103,15 @@ public class TransactionTest {
         // Starts a transaction and returns a client that handles this single transaction
         TransactionClient transaction = client.beginTransactionWithClient();
 
-        // load two random accounts in the transaction
         ObjectRef ref1 = Utils.getRandomElement(accountReferences, rnd);
         ObjectRef ref2 = Utils.getRandomElement(accountReferences, rnd);
+
+        // retry method if the random accounts equal.
+        if (Objects.equals(ref1, ref2)) {
+            return doMoneyTransferPartialUpdate();
+        }
+
+        // load two random accounts in the transaction
         OObject account1 = transaction.load(ref1);
         OObject account2 = transaction.load(ref2);
 
@@ -120,6 +132,46 @@ public class TransactionTest {
             return true;
         } catch (ObjectOutOfDate objectOutOfDate) {
             // Transaction was aborted due to concurrency
+        } catch (TransactionAborted transactionAborted) {
+            // Transaction was aborted because locks could not be acquired (timeout)
+        } catch (TransactionUnavailable transactionUnavailable) {
+            // transaction was aborted due to unavailable components (like redis)
+        }
+        return false;
+    }
+
+    /**
+     * Transfers a random amount between two random accounts using partial updates. This implementation is much faster
+     * than the read-modify-write version and produces no conflicts!
+     *
+     * @return true if the transaction was committed successfully, false otherwise.
+     */
+    public boolean doMoneyTransferPartialUpdate() {
+        // Starts a transaction and returns a client that handles this single transaction
+        TransactionClient transaction = client.beginTransactionWithClient();
+
+        // load two random accounts in the transaction
+        ObjectRef ref1 = Utils.getRandomElement(accountReferences, rnd);
+        ObjectRef ref2 = Utils.getRandomElement(accountReferences, rnd);
+
+        // retry method if the random accounts equal.
+        if (Objects.equals(ref1, ref2)) {
+            return doMoneyTransferPartialUpdate();
+        }
+
+        long transferAmount = rnd.nextInt(100);
+
+        // increment the balance of account one by the transfer amount using a partial update
+        transaction.partialUpdate(ref1, new UpdateOperation("balance", UpdateOperation.Operation.inc, BALANCE_CLASS_FIELD, transferAmount));
+        // decrement for account two. With partial updates objects do not have to be loaded and the updates do not create conflicts.
+        transaction.partialUpdate(ref2, new UpdateOperation("balance", UpdateOperation.Operation.dec, BALANCE_CLASS_FIELD, transferAmount));
+
+        // commit the transaction
+        try {
+            transaction.commit();
+            return true;
+        } catch (ObjectOutOfDate objectOutOfDate) {
+            // Transaction was aborted due to concurrency. This will not happen with partial updates!
         } catch (TransactionAborted transactionAborted) {
             // Transaction was aborted because locks could not be acquired (timeout)
         } catch (TransactionUnavailable transactionUnavailable) {
@@ -171,6 +223,9 @@ public class TransactionTest {
     }
 
     public static void main(String[] args) {
+        // Increase parallelism of this test
+        System.setProperty("java.util.concurrent.ForkJoinPool.common.parallelism", "20");
+
         int runs = 1000;
         TransactionTest test = new TransactionTest();
 
@@ -182,17 +237,34 @@ public class TransactionTest {
         // calculate overall balance
         long overallBalance = test.queryOverallBalance();
         System.out.println("Intial overall balance: " + overallBalance);
+        System.out.println();
 
         // execute some transfers in parallel
-        Stream<Integer> parallel = Stream.generate(() -> 0).limit(runs).parallel();
-        long successes = parallel.filter(ignored -> test.doRandomMoneyTransfer()).count();
+        System.out.println("Simple read-modify-write transfers (" + runs + " runs)");
+        long successes = Utils.timed(() ->
+                IntStream.range(0, runs).parallel().filter(ignored -> test.doRandomMoneyTransfer()).count());
         System.out.println("Successful money transfers: " + successes);
         System.out.println("Aborted money transfers: " + (runs - successes));
 
         // calculate overall balance again (should not have been changed)
         overallBalance = test.queryOverallBalance();
         System.out.println("Final overall balance: " + overallBalance);
+        System.out.println();
+
+        // execute some transfers in parallel
+        System.out.println("Simple read-modify-write transfers (" + runs + " runs)");
+        successes = Utils.timed(() ->
+                IntStream.range(0, runs).parallel().filter(ignored -> test.doMoneyTransferPartialUpdate()).count());
+        System.out.println("Successful money transfers: " + successes);
+        System.out.println("Aborted money transfers: " + (runs - successes));
+
+        // calculate overall balance again (should not have been changed)
+        overallBalance = test.queryOverallBalance();
+        System.out.println("Final overall balance: " + overallBalance);
+        System.out.println();
+
+        System.out.println("Please note that the time information is not an actual benchmark. We did not warum up the JVM, we have no network latencies, only a single server and so on.");
+
         System.exit(0);
     }
-
 }
