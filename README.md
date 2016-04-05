@@ -1,4 +1,4 @@
-Welcome to Baqend transactions
+Welcome to Baqend Transactions
 =======
 This small example project has two purposes:
 
