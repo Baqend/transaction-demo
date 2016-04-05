@@ -3,7 +3,7 @@ Welcome to Baqend Transactions
 This small example project has two purposes:
 
 1. It shows how to connect to a running Baqend-Server using the Java-SDK.
-2. It showcases how to use Baqend's distribute cache-aware transactions.
+2. It showcases how to use Baqend's distributed cache-aware transactions.
 
 Running the Example Project
 --------
