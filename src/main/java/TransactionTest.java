@@ -103,6 +103,7 @@ public class TransactionTest {
      */
     public CompletableFuture<Boolean> doRandomMoneyTransfer() {
         // Starts a transaction and returns a client that handles this single transaction
+        // This example uses the async api, there is also a much lighter synchronous api.
         return client.beginTransactionWithAsyncClient().thenCompose(transaction -> {
 
                     ObjectRef ref1 = Utils.getRandomElement(accountReferences, rnd);
@@ -267,7 +268,7 @@ public class TransactionTest {
         System.out.println();
 
         System.out.println(
-                "Please note that the time information is not an actual benchmark and varies widely.");
+                "Please note that the time information is not an actual benchmark.");
 
         System.exit(0);
     }
