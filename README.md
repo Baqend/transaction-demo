@@ -9,8 +9,7 @@ Running the Example Project
 --------
 1. Setup the Baqend-Server as your Backend:
 	1.  Download the (free) community version of the Baqend-Server [here](http://www.baqend.com/product.html#download) and unzip it.
-	2. Activate the transaction feature in the config file under `/conf/sample_config.json` by adding the following option `"transaction": { "enabled": true }`.
-	3. Start the Baqend-Server (for unix: `./baqend`). It will run on [localhost](http://localhost:8080/dashboard/) port 8080. Your done.
+	2. Start the Baqend-Server (for unix: `./baqend`). It will run on [localhost](http://localhost:8080/dashboard/) port 8080. Your done.
 
 2. Clone and setup this project:
 	1. IntelliJ: File -> New -> Project from Existing Sources... -> Select `build.gradle`, use the default gradle wrapper and Java 8. Start the main-method in class `TransactionTest`.
