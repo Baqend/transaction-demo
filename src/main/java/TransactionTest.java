@@ -13,12 +13,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 /**
- * A test case that uses bank accounts and money transfers
- * to show the usage of baqend and it's transaction api in particular.
+ * A test case that uses bank accounts and money transfers to show the usage of baqend and it's transaction api in
+ * particular.
  */
 public class TransactionTest {
     public static final Bucket TEST_BUCKET = new Bucket("test.bucket.Value");
@@ -47,11 +49,9 @@ public class TransactionTest {
         ClassSpecification s = new ClassSpecification(TEST_BUCKET, BucketAcl.createDefault(),
                 new ClassFieldSpecification("ref", TEST_BUCKET),
                 // CAUTION! Even though the type is named integer you have to store and load long values!!!
-                new ClassFieldSpecification("balance", Bucket.INTEGER),
-                new ClassFieldSpecification("name", Bucket.STRING),
+                new ClassFieldSpecification("balance", Bucket.INTEGER), new ClassFieldSpecification("name", Bucket.STRING),
                 new ClassFieldSpecification("list", Bucket.LIST, Bucket.STRING),
-                new ClassFieldSpecification("date", Bucket.DATETIME),
-                new ClassFieldSpecification("geo", Bucket.GEOPOINT));
+                new ClassFieldSpecification("date", Bucket.DATETIME), new ClassFieldSpecification("geo", Bucket.GEOPOINT));
 
         // Add the schema for the test bucket on the server side.
         client.getSchema().add(s, rootUser);
@@ -88,7 +88,9 @@ public class TransactionTest {
         // Generate a new unique object reference
         ObjectRef newRef = ObjectRef.create(TEST_BUCKET);
         // Instantiate an object for the new references
-        OObject account = client.getSchema().getClass(newRef.getBucket()).newInstance(newRef, ObjectAcl.createDefault());
+        OObject account = client.getSchema()
+                .getClass(newRef.getBucket())
+                .newInstance(newRef, ObjectAcl.createDefault());
         // Set an initial balance
         account.setValue("balance", initialBalance);
         return account;
@@ -99,45 +101,48 @@ public class TransactionTest {
      *
      * @return true if the transaction was committed successfully, false otherwise.
      */
-    public boolean doRandomMoneyTransfer() {
+    public CompletableFuture<Boolean> doRandomMoneyTransfer() {
         // Starts a transaction and returns a client that handles this single transaction
-        TransactionClient transaction = client.beginTransactionWithClient();
+        return client.beginTransactionWithAsyncClient().thenCompose(transaction -> {
 
-        ObjectRef ref1 = Utils.getRandomElement(accountReferences, rnd);
-        ObjectRef ref2 = Utils.getRandomElement(accountReferences, rnd);
+                    ObjectRef ref1 = Utils.getRandomElement(accountReferences, rnd);
+                    ObjectRef ref2 = Utils.getRandomElement(accountReferences, rnd);
 
-        // retry method if the random accounts equal.
-        if (Objects.equals(ref1, ref2)) {
-            return doMoneyTransferPartialUpdate();
-        }
+                    // retry method if the random accounts equal.
+                    if (Objects.equals(ref1, ref2)) {
+                        return doRandomMoneyTransfer();
+                    }
 
-        // load two random accounts in the transaction
-        OObject account1 = transaction.load(ref1);
-        OObject account2 = transaction.load(ref2);
+                    // load two random accounts in the transaction
+                    CompletableFuture<OObject> account1Future = transaction.loadAsync(ref1);
+                    CompletableFuture<OObject> account2Future = transaction.loadAsync(ref2);
 
-        int transferAmount = rnd.nextInt(100);
-        // transfer the money
-        long newBalance2 = (long) account1.getValue("balance") - transferAmount;
-        long newBalance1 = (long) account2.getValue("balance") + transferAmount;
-        account1.setValue("balance", newBalance1);
-        account2.setValue("balance", newBalance2);
+                    return CompletableFuture.allOf(account1Future, account2Future).thenCompose(ignored -> {
+                        OObject account1 = account1Future.join();
+                        OObject account2 = account2Future.join();
 
-        // save the accounts
-        transaction.update(account1);
-        transaction.update(account2);
+                        int transferAmount = rnd.nextInt(100);
+                        // transfer the money
+                        long newBalance2 = (long) account1.getValue("balance") - transferAmount;
+                        long newBalance1 = (long) account2.getValue("balance") + transferAmount;
+                        account1.setValue("balance", newBalance1);
+                        account2.setValue("balance", newBalance2);
 
-        // commit the transaction
-        try {
-            transaction.commit();
-            return true;
-        } catch (ObjectOutOfDate objectOutOfDate) {
-            // Transaction was aborted due to concurrency
-        } catch (TransactionAborted transactionAborted) {
-            // Transaction was aborted because locks could not be acquired (timeout)
-        } catch (TransactionUnavailable transactionUnavailable) {
-            // transaction was aborted due to unavailable components (like redis)
-        }
-        return false;
+                        // save the accounts
+                        transaction.update(account1);
+                        transaction.update(account2);
+
+                /*
+                 * commit the transaction:
+                 * Error ObjectOutOfDate indicates: Transaction was aborted due to concurrency
+                 * Error TransactionAborted indicates: Transaction was aborted because locks could not be acquired (timeout)
+                 * Error TransactionUnavailable indicates: transaction was aborted due to unavailable components (like redis)
+                 */
+                        return transaction.commitAsync().handle((result, error) -> error == null);
+                    });
+                }
+
+        );
     }
 
     /**
@@ -146,38 +151,30 @@ public class TransactionTest {
      *
      * @return true if the transaction was committed successfully, false otherwise.
      */
-    public boolean doMoneyTransferPartialUpdate() {
+    public CompletableFuture<Boolean> doMoneyTransferPartialUpdate() {
         // Starts a transaction and returns a client that handles this single transaction
-        TransactionClient transaction = client.beginTransactionWithClient();
+        return client.beginTransactionWithAsyncClient().thenCompose(transaction -> {
 
-        // load two random accounts in the transaction
-        ObjectRef ref1 = Utils.getRandomElement(accountReferences, rnd);
-        ObjectRef ref2 = Utils.getRandomElement(accountReferences, rnd);
+            // load two random accounts in the transaction
+            ObjectRef ref1 = Utils.getRandomElement(accountReferences, rnd);
+            ObjectRef ref2 = Utils.getRandomElement(accountReferences, rnd);
 
-        // retry method if the random accounts equal.
-        if (Objects.equals(ref1, ref2)) {
-            return doMoneyTransferPartialUpdate();
-        }
+            // retry method if the random accounts equal.
+            if (Objects.equals(ref1, ref2)) {
+                return doMoneyTransferPartialUpdate();
+            }
 
-        long transferAmount = rnd.nextInt(100);
+            long transferAmount = rnd.nextInt(100);
 
-        // increment the balance of account one by the transfer amount using a partial update
-        transaction.partialUpdate(ref1, new UpdateOperation("balance", UpdateOperation.Operation.inc, BALANCE_CLASS_FIELD, transferAmount));
-        // decrement for account two. With partial updates objects do not have to be loaded and the updates do not create conflicts.
-        transaction.partialUpdate(ref2, new UpdateOperation("balance", UpdateOperation.Operation.dec, BALANCE_CLASS_FIELD, transferAmount));
+            // increment the balance of account one by the transfer amount using a partial update
+            transaction.partialUpdate(ref1,
+                    new UpdateOperation("balance", UpdateOperation.Operation.inc, BALANCE_CLASS_FIELD, transferAmount));
+            // decrement for account two. With partial updates objects do not have to be loaded and the updates do not create conflicts.
+            transaction.partialUpdate(ref2,
+                    new UpdateOperation("balance", UpdateOperation.Operation.dec, BALANCE_CLASS_FIELD, transferAmount));
 
-        // commit the transaction
-        try {
-            transaction.commit();
-            return true;
-        } catch (ObjectOutOfDate objectOutOfDate) {
-            // Transaction was aborted due to concurrency. This will not happen with partial updates!
-        } catch (TransactionAborted transactionAborted) {
-            // Transaction was aborted because locks could not be acquired (timeout)
-        } catch (TransactionUnavailable transactionUnavailable) {
-            // transaction was aborted due to unavailable components (like redis)
-        }
-        return false;
+            return transaction.commitAsync().handle((result, error) -> error == null);
+        });
     }
 
     /**
@@ -223,14 +220,12 @@ public class TransactionTest {
     }
 
     public static void main(String[] args) {
-        // Increase parallelism of this test
-        System.setProperty("java.util.concurrent.ForkJoinPool.common.parallelism", "20");
 
         int runs = 1000;
         TransactionTest test = new TransactionTest();
 
         // Init the economy with 100 accounts
-        int numAccounts = 1_000;
+        int numAccounts = 10_000;
         test.initEconomy(numAccounts);
         System.out.println("DB initialized with " + numAccounts + " bank accounts");
 
@@ -241,8 +236,12 @@ public class TransactionTest {
 
         // execute some transfers in parallel
         System.out.println("Simple read-modify-write transfers (" + runs + " runs)");
-        long successes = Utils.timed(() ->
-                IntStream.range(0, runs).parallel().filter(ignored -> test.doRandomMoneyTransfer()).count());
+        long successes = Utils.timed(() -> IntStream.range(0, runs)
+                .mapToObj(ignored -> test.doRandomMoneyTransfer())
+                .collect(Collectors.toList())
+                .stream()
+                .filter(CompletableFuture::join)
+                .count());
         System.out.println("Successful money transfers: " + successes);
         System.out.println("Aborted money transfers: " + (runs - successes));
 
@@ -252,9 +251,13 @@ public class TransactionTest {
         System.out.println();
 
         // execute some transfers in parallel
-        System.out.println("Simple read-modify-write transfers (" + runs + " runs)");
-        successes = Utils.timed(() ->
-                IntStream.range(0, runs).parallel().filter(ignored -> test.doMoneyTransferPartialUpdate()).count());
+        System.out.println("Partial update transfers (" + runs + " runs)");
+        successes = Utils.timed(() -> IntStream.range(0, runs)
+                .mapToObj(ignored -> test.doMoneyTransferPartialUpdate())
+                .collect(Collectors.toList())
+                .stream()
+                .filter(CompletableFuture::join)
+                .count());
         System.out.println("Successful money transfers: " + successes);
         System.out.println("Aborted money transfers: " + (runs - successes));
 
@@ -263,8 +266,10 @@ public class TransactionTest {
         System.out.println("Final overall balance: " + overallBalance);
         System.out.println();
 
-        System.out.println("Please note that the time information is not an actual benchmark. We did not warum up the JVM, we have no network latencies, only a single server and so on.");
+        System.out.println(
+                "Please note that the time information is not an actual benchmark and varies widely.");
 
         System.exit(0);
     }
 }
+
