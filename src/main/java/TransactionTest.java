@@ -236,7 +236,7 @@ public class TransactionTest {
         System.out.println();
 
         // execute some transfers in parallel
-        System.out.println("Simple read-modify-write transfers (" + runs + " runs)");
+        System.out.println("Simple read-modify-write transfers (" + runs + "parallel runs) -> expected abort rate up to 20%");
         long successes = Utils.timed(() -> IntStream.range(0, runs)
                 .mapToObj(ignored -> test.doRandomMoneyTransfer())
                 .collect(Collectors.toList())
@@ -252,7 +252,7 @@ public class TransactionTest {
         System.out.println();
 
         // execute some transfers in parallel
-        System.out.println("Partial update transfers (" + runs + " runs)");
+        System.out.println("Partial update transfers (" + runs + "parallel runs) -> expected abort rate < 1%");
         successes = Utils.timed(() -> IntStream.range(0, runs)
                 .mapToObj(ignored -> test.doMoneyTransferPartialUpdate())
                 .collect(Collectors.toList())
